@@ -109,7 +109,7 @@ export function WaitlistExperience() {
             </h1>
 
             <p className="text-lg md:text-xl text-white/60 max-w-2xl mx-auto mb-10 font-medium leading-relaxed">
-              The network for spontaneous action. Drop your current vibe, find adventurous people nearby, and meet up instantly. Stop waiting, start living.
+              Drop a vibe. Find your crowd. Meet up instantly. The city is waiting—start living.
             </p>
 
             {/* Waitlist Input */}
@@ -138,7 +138,7 @@ export function WaitlistExperience() {
                         "Joining..."
                       ) : (
                         <>
-                          <span className="hidden sm:inline">Request Access</span>
+                          <span className="hidden sm:inline">Join</span>
                           <span className="sm:hidden">Join</span>
                           <ArrowRight className="w-4 h-4 ml-1.5 sm:ml-2" />
                         </>
