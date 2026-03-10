@@ -25,67 +25,72 @@ export function InteractiveGradientBackground({
 }: InteractiveGradientBackgroundProps) {
   const ref = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number | null>(null);
-  const pendingRef = useRef<PointerEvent | Touch | null>(null);
-
-  const schedule = () => {
-    if (rafRef.current) return;
-    rafRef.current = requestAnimationFrame(() => {
-      rafRef.current = null;
-      const host = ref.current;
-      const ev = pendingRef.current;
-      if (!host || !ev) return;
-      const rect = host.getBoundingClientRect();
-      const px = ('clientX' in ev ? ev.clientX : 0) - rect.left - rect.width / 2;
-      const py = ('clientY' in ev ? ev.clientY : 0) - rect.top - rect.height / 2;
-
-      const prefersReduced =
-        typeof window !== 'undefined' &&
-        window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-
-      // Reduced intensity slightly so the movement feels smoother and less erratic
-      const k = prefersReduced ? 0.1 : intensity * 0.8;
-
-      host.style.setProperty('--posX', String(px * k));
-      host.style.setProperty('--posY', String(py * k));
-    });
-  };
+  
+  // Track where the mouse is (target) vs where the gradient is (current)
+  const targetPos = useRef({ x: 0, y: 0 });
+  const currentPos = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     const host = ref.current;
     if (!host) return;
 
-    // set initial vars
+    // Set initial static positions
     host.style.setProperty('--posX', String(initialOffset?.x ?? 0));
     host.style.setProperty('--posY', String(initialOffset?.y ?? 0));
 
     if (!interactive) return;
 
-    const onPointer = (e: PointerEvent) => {
-      pendingRef.current = e;
-      schedule();
-    };
-    const onTouch = (e: TouchEvent) => {
-      if (!e.touches.length) return;
-      pendingRef.current = e.touches[0];
-      schedule();
-    };
-    const reset = () => {
-      host.style.setProperty('--posX', '0');
-      host.style.setProperty('--posY', '0');
+    // Detect if the user is on a touch device (mobile/tablet)
+    const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+    // If on mobile, exit early. No event listeners, no animation loops. Peak performance.
+    if (isTouchDevice) return;
+
+    const onPointerMove = (e: PointerEvent) => {
+      // Ignore any accidental touch events on hybrid devices
+      if (e.pointerType === 'touch') return;
+
+      const rect = host.getBoundingClientRect();
+      // Calculate where the mouse is relative to the center of the screen
+      targetPos.current.x = e.clientX - rect.left - rect.width / 2;
+      targetPos.current.y = e.clientY - rect.top - rect.height / 2;
     };
 
-    host.addEventListener('pointermove', onPointer, { passive: true });
-    host.addEventListener('touchmove', onTouch, { passive: true });
-    host.addEventListener('pointerleave', reset);
-    host.addEventListener('touchend', reset);
-    host.addEventListener('touchcancel', reset);
+    const onPointerLeave = () => {
+      // Gently return to center when mouse leaves the screen
+      targetPos.current.x = 0;
+      targetPos.current.y = 0;
+    };
 
+    // The Physics Engine (Buttery Smooth Lerping)
+    const renderLoop = () => {
+      const prefersReduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      const k = prefersReduced ? 0.1 : intensity * 0.8;
+
+      // Lerp math: Move the current position 6% towards the target position every frame.
+      // This creates the ultra-smooth, fluid trailing effect with zero lag.
+      currentPos.current.x += (targetPos.current.x - currentPos.current.x) * 0.06;
+      currentPos.current.y += (targetPos.current.y - currentPos.current.y) * 0.06;
+
+      // Apply the physics to the CSS variables
+      host.style.setProperty('--posX', String(currentPos.current.x * k));
+      host.style.setProperty('--posY', String(currentPos.current.y * k));
+
+      // Loop infinitely
+      rafRef.current = requestAnimationFrame(renderLoop);
+    };
+
+    // Attach listeners
+    host.addEventListener('pointermove', onPointerMove, { passive: true });
+    host.addEventListener('pointerleave', onPointerLeave);
+
+    // Kick off the continuous smooth render loop
+    rafRef.current = requestAnimationFrame(renderLoop);
+
+    // Cleanup on unmount
     return () => {
-      host.removeEventListener('pointermove', onPointer);
-      host.removeEventListener('touchmove', onTouch);
-      host.removeEventListener('pointerleave', reset);
-      host.removeEventListener('touchend', reset);
-      host.removeEventListener('touchcancel', reset);
+      host.removeEventListener('pointermove', onPointerMove);
+      host.removeEventListener('pointerleave', onPointerLeave);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, [interactive, intensity, initialOffset?.x, initialOffset?.y]);
@@ -116,8 +121,6 @@ export function InteractiveGradientBackground({
           inset: 0,
           opacity: dark ? 0 : 1,
           transition: 'opacity 0.5s ease',
-          // REMOVED: filter: blur() and mix-blend-mode. 
-          // INSTEAD: We use native radial fades (rgba to transparent) which are hardware accelerated and buttery smooth.
           background: `
             radial-gradient(circle 800px at calc(20% + var(--posX)*1.5px) calc(20% + var(--posY)*1.5px), rgba(0, 150, 255, 0.25) 0%, transparent 100%),
             radial-gradient(circle 900px at calc(80% - var(--posX)*1px) calc(10% - var(--posY)*1px), rgba(239, 200, 139, 0.25) 0%, transparent 100%),
@@ -127,7 +130,7 @@ export function InteractiveGradientBackground({
         }}
       />
       
-      {/* Dark layer (Optimized just in case you ever switch to dark={true}) */}
+      {/* Dark layer */}
       <div
         aria-hidden="true"
         style={{

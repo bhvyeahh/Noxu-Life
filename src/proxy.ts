@@ -9,10 +9,28 @@ const getJwtSecretKey = () => {
   return new TextEncoder().encode(secret);
 };
 
+// VITAL FIX: Exported as 'proxy' for Next.js 16+ compatibility
 export async function proxy(request: NextRequest) {
-  const token = request.cookies.get('noxu_session')?.value;
   const { pathname } = request.nextUrl;
+  const isProduction = process.env.NODE_ENV === 'production';
 
+  // ------------------------------------------------------------------
+  // 1. PRODUCTION LOCKDOWN (Runs only on Netlify)
+  // ------------------------------------------------------------------
+  if (isProduction) {
+    // If they try to go anywhere other than the home page (waitlist),
+    // and it's not a background API route, block them.
+    if (pathname !== '/' && !pathname.startsWith('/api')) {
+      return NextResponse.redirect(new URL('/', request.url));
+    }
+    // If it's just the home page, let them through to see the waitlist.
+    return NextResponse.next();
+  }
+
+  // ------------------------------------------------------------------
+  // 2. LOCAL DEV MODE (Runs only on your computer during npm run dev)
+  // ------------------------------------------------------------------
+  const token = request.cookies.get('noxu_session')?.value;
   let isAuthenticated = false;
 
   // Verify the JWT token on the Edge runtime
@@ -29,12 +47,12 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // 1. Protect the Dashboard: If not logged in, kick them to login
+  // Protect the Dashboard: If not logged in, kick them to login
   if (!isAuthenticated && pathname.startsWith('/dashboard')) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  // 2. Prevent Login loops: If already logged in, skip login page
+  // Prevent Login loops: If already logged in, skip login page
   if (isAuthenticated && pathname === '/login') {
     return NextResponse.redirect(new URL('/dashboard', request.url));
   }
@@ -44,5 +62,9 @@ export async function proxy(request: NextRequest) {
 
 // Specify exactly which routes the Bouncer should watch
 export const config = {
-  matcher: ['/dashboard/:path*', '/login'],
+  // Matches everything so production lockdown works,
+  // but explicitly ignores Next.js static files and images.
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 };
