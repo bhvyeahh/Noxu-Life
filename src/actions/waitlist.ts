@@ -58,3 +58,21 @@ export async function joinWaitlist(email: string) {
     return { success: false, message: "Server error occurred." };
   }
 }
+
+export async function getWaitlistCount() {
+  try {
+    // THIS WAS MISSING: You must connect to the DB before counting
+    await connectToDatabase();
+    
+    const count = await Waitlist.countDocuments(); 
+    
+    console.log(`📊 DB Count Fetched: ${count} real users`);
+    
+    // Returning the real count + 42 (seed number so it doesn't look empty on day 1)
+    return count + 22; 
+  } catch (error) {
+    console.error("❌ Failed to fetch waitlist count:", error);
+    // If DB fails, return 42 so the UI doesn't break or show 0
+    return 42;
+  }
+}

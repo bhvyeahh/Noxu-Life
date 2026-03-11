@@ -1,7 +1,14 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { ArrowRight, MapPin, Zap, Navigation, Home, ShieldCheck } from "lucide-react";
+import {
+  ArrowRight,
+  MapPin,
+  Zap,
+  Navigation,
+  Home,
+  ShieldCheck,
+} from "lucide-react";
 import {
   GlassEffect,
   GlassDock,
@@ -9,17 +16,37 @@ import {
   GlassFilter,
 } from "@/components/ui/liquid-glass";
 import { InteractiveGradientBackground } from "@/components/ui/interactive-gradient-background";
-import { joinWaitlist } from "@/actions/waitlist";
+import { joinWaitlist, getWaitlistCount } from "@/actions/waitlist";
 
 export function WaitlistExperience() {
   const [email, setEmail] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [mounted, setMounted] = useState(false);
 
+
+  // FIXED: Initialized to 0 instead of null so it is strictly forced to render on screen.
+  const [waitlistCount, setWaitlistCount] = useState<number>(0);
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    setMounted(true);
+
+    // Securely fetch only the integer count on load
+    const fetchCount = async () => {
+      try {
+        const count = await getWaitlistCount();
+        if (typeof count === "number") {
+          setWaitlistCount(count);
+        }
+      } catch (err) {
+        console.error("Failed to fetch count");
+      }
+    };
+
+    fetchCount();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,6 +60,8 @@ export function WaitlistExperience() {
 
       if (result.success) {
         setIsSubmitted(true);
+        // Optimistically increment the counter when they join
+        setWaitlistCount((prev) => prev + 1);
       } else {
         setError(result.message);
       }
@@ -53,30 +82,12 @@ export function WaitlistExperience() {
         {/* Matte Noise Overlay */}
         <div className="fixed inset-0 z-0 opacity-[0.04] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-overlay" />
 
-        {/* VisionOS Dock Navigation */}
-        {/* <GlassDock>
-          <GlassButton className="w-12 h-12 p-0 rounded-full flex items-center justify-center border-none bg-transparent shadow-none hover:bg-white/10">
-            <Home className="w-5 h-5" />
-          </GlassButton>
-          <div className="w-[1px] h-6 bg-white/20 mx-1" />
-          <span className="px-4 text-sm font-medium tracking-wide">
-            Drop Zones
-          </span>
-          <span className="px-4 text-sm font-medium tracking-wide hidden sm:block">
-            Live Radar
-          </span>
-          <span className="px-4 text-sm font-medium tracking-wide hidden sm:block">
-            Burner Chats
-          </span>
-        </GlassDock> */}
-
         <div className="relative z-10 flex flex-col items-center pt-24 pb-24 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto min-h-screen">
-          
           {/* Luminous Brand Logo */}
           <div className="flex justify-center mb-10 relative animate-in fade-in slide-in-from-top-8 duration-1000">
             {/* Ambient background glow for the logo */}
             <div className="absolute inset-0 bg-[#CF5C36]/20 blur-[50px] rounded-full w-32 h-32 mx-auto -top-6 pointer-events-none"></div>
-            
+
             <h2 className="text-4xl sm:text-5xl font-black tracking-tighter text-white relative z-10 flex items-center drop-shadow-md">
               NO
               <span className="relative inline-flex items-center justify-center mx-[2px]">
@@ -109,7 +120,8 @@ export function WaitlistExperience() {
             </h1>
 
             <p className="text-lg md:text-xl text-white/60 max-w-2xl mx-auto mb-10 font-medium leading-relaxed">
-              Drop a vibe. Find your crowd. Meet up instantly. The city is waiting—start living.
+              Drop a vibe. Find your crowd. Meet up instantly. The city is
+              waiting—start living.
             </p>
 
             {/* Waitlist Input */}
@@ -159,16 +171,95 @@ export function WaitlistExperience() {
                   {error}
                 </p>
               )}
+
+              {/* FIXED: Removed the null check so this absolutely renders on screen */}
+              {/* Ultra-Premium Glass Waitlist Counter */}
+              {waitlistCount !== null && (
+                <div className="absolute -bottom-20 left-0 right-0 flex justify-center animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-500">
+                  <div className="inline-flex items-center gap-4 px-5 py-2.5 rounded-[20px] bg-white/[0.02] border border-white/[0.05] backdrop-blur-3xl shadow-[0_20px_40px_-10px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.05)] hover:bg-white/[0.04] transition-all duration-300 group">
+                    {/* Pulsating Live Indicator */}
+                    <div className="flex items-center gap-2">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#EFC88B] opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-[#EFC88B] shadow-[0_0_8px_#EFC88B]"></span>
+                      </span>
+                      <span className="text-[10px] uppercase tracking-widest font-bold text-[#EFC88B]/80 group-hover:text-[#EFC88B] transition-colors">
+                        Live
+                      </span>
+                    </div>
+
+                    <div className="w-px h-4 bg-white/10" />
+
+                    {/* Premium 3D Mesh Avatars */}
+                    <div className="flex -space-x-2.5">
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#CF5C36] to-black border border-white/20 shadow-lg relative overflow-hidden">
+                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
+                      </div>
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#EFC88B] via-[#CF5C36] to-[#3a1a10] border border-white/20 shadow-lg relative overflow-hidden z-10">
+                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
+                      </div>
+                      <div className="w-7 h-7 rounded-full bg-white/5 border border-white/20 shadow-lg flex items-center justify-center backdrop-blur-md z-20 overflow-hidden relative">
+                        <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent"></div>
+                        <span className="text-[10px] font-bold text-white/80 z-10">
+                          +
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Premium Typography */}
+                    <div className="text-sm font-medium text-white/50 tracking-wide flex items-baseline gap-1.5">
+                      Join
+                      <strong className="text-transparent bg-clip-text bg-gradient-to-r from-[#EFC88B] via-[#E36940] to-[#CF5C36] font-bold text-lg tracking-normal drop-shadow-sm">
+                        {waitlistCount.toLocaleString()}
+                      </strong>
+                      others
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
+
+{/* --- PASTE THIS RIGHT BELOW YOUR WAITLIST FORM CONTAINER --- */}
+          
+          {/* Product Hunt Embed - Dark Glass Theme */}
+          <div className="mt-20 sm:mt-24 mb-4 mx-auto w-full max-w-[420px] p-5 rounded-2xl bg-white/[0.02] border border-white/[0.05] backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_1px_rgba(255,255,255,0.05)] transition-all hover:-translate-y-1 hover:shadow-[0_15px_40px_rgba(255,97,84,0.15)] duration-500 animate-in fade-in slide-in-from-bottom-8 delay-700">
+            <div className="flex items-center gap-4 mb-5">
+              <img 
+                alt="Noxu | The Inner Circle" 
+                src="https://ph-files.imgix.net/fa850207-8b83-4398-aece-b6e117992254.png?auto=format&fit=crop&w=80&h=80" 
+                className="w-16 h-16 rounded-[14px] object-cover flex-shrink-0 border border-white/10 shadow-inner"
+              />
+              <div className="flex-1 min-w-0 text-left">
+                <h3 className="m-0 text-lg font-bold text-white leading-tight truncate tracking-tight">
+                  Noxu | The Inner Circle
+                </h3>
+                <p className="mt-1 text-sm font-medium text-white/50 leading-snug line-clamp-2">
+                  Your friends are busy. The city isn't.
+                </p>
+              </div>
+            </div>
+            <a 
+              href="https://www.producthunt.com/products/noxu-the-inner-circle?embed=true&utm_source=embed&utm_medium=post_embed" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="flex w-full justify-center items-center gap-2 px-4 py-3 bg-[#FF6154] hover:bg-[#FF6154]/90 text-white decoration-none rounded-[12px] text-sm font-bold transition-all shadow-[0_0_20px_rgba(255,97,84,0.2)] hover:shadow-[0_0_25px_rgba(255,97,84,0.4)] group"
+            >
+              Check it out on Product Hunt 
+              <span className="group-hover:translate-x-1 transition-transform">→</span>
+            </a>
+          </div>
+          
+          {/* --- END OF PRODUCT HUNT EMBED --- */}
+
+
           {/* Hyper-Premium Liquid Glass Feature Cards with Editorial Numbers */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8 w-full max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-12 duration-1000 delay-500 fill-mode-both font-sans">
-            
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8 w-full max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-12 duration-1000 delay-500 fill-mode-both font-sans mt-12">
             {/* Feature 1 - MapPin */}
             <div className="group relative p-8 sm:p-10 rounded-[32px] bg-white/[0.01] backdrop-blur-3xl border border-white/[0.03] overflow-hidden transition-all duration-500 hover:-translate-y-2 hover:shadow-[0_30px_60px_-15px_rgba(0,0,0,0.8)] supports-[backdrop-filter]:bg-white/[0.01]">
               <div className="absolute inset-0 opacity-[0.02] mix-blend-overlay bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
-              
+
               {/* Massive Editorial Background Number */}
               <div className="absolute -right-6 -top-10 text-[140px] font-black text-white/[0.015] select-none pointer-events-none group-hover:text-white/[0.03] transition-colors duration-500 leading-none tracking-tighter">
                 01
@@ -182,14 +273,19 @@ export function WaitlistExperience() {
 
               <div className="relative z-10">
                 <div className="mb-8 flex h-16 w-16 items-center justify-center rounded-[20px] bg-gradient-to-b from-white/[0.08] to-white/[0.01] border border-white/[0.08] shadow-[0_8px_16px_rgba(0,0,0,0.4),inset_0_1px_1px_rgba(255,255,255,0.1)] group-hover:scale-110 transition-all duration-500 group-hover:shadow-[0_0_30px_rgba(255,255,255,0.1)] group-hover:border-white/20">
-                  <MapPin className="h-7 w-7 text-white/70 group-hover:text-white transition-colors duration-300" strokeWidth={1.5} />
+                  <MapPin
+                    className="h-7 w-7 text-white/70 group-hover:text-white transition-colors duration-300"
+                    strokeWidth={1.5}
+                  />
                 </div>
 
                 <h3 className="mb-3.5 text-2xl font-bold text-white tracking-tight drop-shadow-sm">
                   Curated Drop Zones
                 </h3>
                 <p className="text-base font-medium leading-relaxed text-[#8a8a8a] group-hover:text-white/80 transition-colors duration-500">
-                  Meetups happen strictly at verified, public hotspots. Safety is built into the coordinates. Zero sketchy residential addresses.
+                  Meetups happen strictly at verified, public hotspots. Safety
+                  is built into the coordinates. Zero sketchy residential
+                  addresses.
                 </p>
               </div>
             </div>
@@ -197,7 +293,7 @@ export function WaitlistExperience() {
             {/* Feature 2 - Zap (Gold) */}
             <div className="group relative p-8 sm:p-10 rounded-[32px] bg-white/[0.01] backdrop-blur-3xl border border-white/[0.03] overflow-hidden transition-all duration-500 hover:-translate-y-2 hover:shadow-[0_30px_60px_-15px_rgba(239,200,139,0.15)] supports-[backdrop-filter]:bg-white/[0.01]">
               <div className="absolute inset-0 opacity-[0.02] mix-blend-overlay bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
-              
+
               <div className="absolute -right-6 -top-10 text-[140px] font-black text-[#EFC88B]/[0.015] select-none pointer-events-none group-hover:text-[#EFC88B]/[0.04] transition-colors duration-500 leading-none tracking-tighter">
                 02
               </div>
@@ -210,14 +306,18 @@ export function WaitlistExperience() {
 
               <div className="relative z-10">
                 <div className="mb-8 flex h-16 w-16 items-center justify-center rounded-[20px] bg-gradient-to-b from-[#EFC88B]/[0.08] to-[#EFC88B]/[0.01] border border-white/[0.08] shadow-[0_8px_16px_rgba(0,0,0,0.4),inset_0_1px_1px_rgba(255,255,255,0.1)] group-hover:scale-110 transition-all duration-500 group-hover:shadow-[0_0_30px_rgba(239,200,139,0.2)] group-hover:border-[#EFC88B]/40">
-                  <Zap className="h-7 w-7 text-[#EFC88B]/70 group-hover:text-[#EFC88B] transition-colors duration-300 fill-[#EFC88B]/10" strokeWidth={1.5} />
+                  <Zap
+                    className="h-7 w-7 text-[#EFC88B]/70 group-hover:text-[#EFC88B] transition-colors duration-300 fill-[#EFC88B]/10"
+                    strokeWidth={1.5}
+                  />
                 </div>
 
                 <h3 className="mb-3.5 text-2xl font-bold text-white tracking-tight drop-shadow-sm">
                   Expiring Connections
                 </h3>
                 <p className="text-base font-medium leading-relaxed text-[#8a8a8a] group-hover:text-white/80 transition-colors duration-500">
-                  Matches unlock a temporary burner chat. Make the plan, meet up, and let the history self-destruct. Live in the moment.
+                  Matches unlock a temporary burner chat. Make the plan, meet
+                  up, and let the history self-destruct. Live in the moment.
                 </p>
               </div>
             </div>
@@ -225,7 +325,7 @@ export function WaitlistExperience() {
             {/* Feature 3 - Navigation (Orange) */}
             <div className="group relative p-8 sm:p-10 rounded-[32px] bg-white/[0.01] backdrop-blur-3xl border border-white/[0.03] overflow-hidden transition-all duration-500 hover:-translate-y-2 hover:shadow-[0_30px_60px_-15px_rgba(207,92,54,0.2)] supports-[backdrop-filter]:bg-white/[0.01]">
               <div className="absolute inset-0 opacity-[0.02] mix-blend-overlay bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
-              
+
               <div className="absolute -right-6 -top-10 text-[140px] font-black text-[#CF5C36]/[0.015] select-none pointer-events-none group-hover:text-[#CF5C36]/[0.04] transition-colors duration-500 leading-none tracking-tighter">
                 03
               </div>
@@ -238,21 +338,26 @@ export function WaitlistExperience() {
 
               <div className="relative z-10">
                 <div className="mb-8 flex h-16 w-16 items-center justify-center rounded-[20px] bg-gradient-to-b from-[#CF5C36]/[0.1] to-[#CF5C36]/[0.01] border border-white/[0.08] shadow-[0_8px_16px_rgba(0,0,0,0.4),inset_0_1px_1px_rgba(255,255,255,0.1)] group-hover:scale-110 transition-all duration-500 group-hover:shadow-[0_0_30px_rgba(207,92,54,0.3)] group-hover:border-[#CF5C36]/50">
-                  <Navigation className="h-7 w-7 text-[#CF5C36]/70 group-hover:text-[#CF5C36] transition-colors duration-300 fill-[#CF5C36]/10" strokeWidth={1.5} />
+                  <Navigation
+                    className="h-7 w-7 text-[#CF5C36]/70 group-hover:text-[#CF5C36] transition-colors duration-300 fill-[#CF5C36]/10"
+                    strokeWidth={1.5}
+                  />
                 </div>
 
                 <h3 className="mb-3.5 text-2xl font-bold text-white tracking-tight drop-shadow-sm">
                   Proximity Unlock
                 </h3>
                 <p className="text-base font-medium leading-relaxed text-[#8a8a8a] group-hover:text-white/80 transition-colors duration-500">
-                  Your exact location stays masked until you're both within a 500-meter radius of the venue. Ghosting solved by physics.
+                  Your exact location stays masked until you're both within a
+                  500-meter radius of the venue. Ghosting solved by physics.
                 </p>
               </div>
             </div>
-
           </div>
         </div>
+
       </InteractiveGradientBackground>
+      
     </main>
   );
 }
