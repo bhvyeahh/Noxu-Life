@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   title: "Noxu | The Inner Circle",
   description: "Discover exclusive vibes and connect with people nearby.",
   icons: {
-    icon: "/favicon.ico", // Add your logo here later
+    icon: "/icon.png", // Add your logo here later
   },
 };
 

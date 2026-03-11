@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import gsap from "gsap";
 import {
   ArrowRight,
   MapPin,
@@ -18,11 +19,110 @@ import {
 import { InteractiveGradientBackground } from "@/components/ui/interactive-gradient-background";
 import { joinWaitlist, getWaitlistCount } from "@/actions/waitlist";
 
+// ==========================================
+// THE NOXU CINEMATIC LOADER (GSAP)
+// ==========================================
+const NoxuLoader = ({ onComplete }: { onComplete: () => void }) => {
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const textRef = React.useRef<HTMLDivElement>(null);
+  const xRef = React.useRef<HTMLSpanElement>(null);
+  
+  // Refs for the side letters to push them away
+  const nRef = React.useRef<HTMLSpanElement>(null);
+  const oRef = React.useRef<HTMLSpanElement>(null);
+  const uRef = React.useRef<HTMLSpanElement>(null);
+  const dotRef = React.useRef<HTMLSpanElement>(null);
+
+  React.useEffect(() => {
+    // Lock scrolling while loader is active
+    document.body.style.overflow = "hidden";
+
+    const tl = gsap.timeline({
+      onComplete: () => {
+        document.body.style.overflow = "auto"; // Unlock scrolling
+        onComplete();
+      },
+    });
+
+    // 1. Fade in the whole NOXU word from the dark
+    tl.fromTo(
+      textRef.current,
+      { opacity: 0, scale: 0.8, filter: "blur(10px)" },
+      { opacity: 1, scale: 1, filter: "blur(0px)", duration: 1, ease: "expo.out" }
+    )
+    
+    // 2. The Suspense Pause: X pulses with energy
+    .to(xRef.current, { 
+      textShadow: "0px 0px 40px rgba(207,92,54,0.8)", 
+      duration: 0.5, 
+      yoyo: true, 
+      repeat: 1 
+    }, "+=0.2")
+
+    // 3. The Breakaway: N, O slide left. U, dot slide right, fading out
+    .to([nRef.current, oRef.current], { x: -50, opacity: 0, duration: 0.8, ease: "power3.inOut" }, "split")
+    .to([uRef.current, dotRef.current], { x: 50, opacity: 0, duration: 0.8, ease: "power3.inOut" }, "split")
+
+    // 4. The Gateway: The X extends its arms, scaling massively until we fly through it
+    .to(xRef.current, { 
+      scale: 150, 
+      opacity: 0, // Fades out right as it engulfs the screen
+      duration: 1.2, 
+      ease: "power4.inOut" 
+    }, "split+=0.2")
+
+    // 5. Fade out the black background container to reveal the loaded page
+    .to(containerRef.current, { 
+      opacity: 0, 
+      duration: 0.6, 
+      ease: "power2.out" 
+    }, "-=0.6");
+
+    return () => {
+      tl.kill(); // Cleanup GSAP on unmount
+      document.body.style.overflow = "auto";
+    };
+  }, [onComplete]);
+
+  return (
+    <div 
+      ref={containerRef} 
+      className="fixed inset-0 z-[999] flex items-center justify-center bg-[#030303]"
+    >
+      <div 
+        ref={textRef} 
+        className="text-5xl sm:text-7xl font-black tracking-tighter text-white flex items-center select-none"
+      >
+        <span ref={nRef} className="inline-block">N</span>
+        <span ref={oRef} className="inline-block">O</span>
+        
+        {/* The Core 'X' */}
+        <span 
+          ref={xRef} 
+          className="relative z-10 text-transparent bg-clip-text bg-gradient-to-br from-[#CF5C36] via-[#E36940] to-[#EFC88B] mx-[2px] inline-block origin-center transform-gpu will-change-transform"
+        >
+          X
+          {/* Subtle built-in glow for the X */}
+          <span className="absolute inset-0 bg-[#CF5C36] blur-[10px] opacity-50 mix-blend-screen -z-10"></span>
+        </span>
+        
+        <span ref={uRef} className="inline-block">U</span>
+        <span ref={dotRef} className="text-[#CF5C36] ml-[2px] inline-block">.</span>
+      </div>
+    </div>
+  );
+};
+
+// ==========================================
+// MAIN PAGE COMPONENT
+// ==========================================
 export function WaitlistExperience() {
   const [email, setEmail] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [mounted, setMounted] = useState(false);
 
+  // Added Loader State
+  const [showLoader, setShowLoader] = useState(true);
 
   // FIXED: Initialized to 0 instead of null so it is strictly forced to render on screen.
   const [waitlistCount, setWaitlistCount] = useState<number>(0);
@@ -75,7 +175,11 @@ export function WaitlistExperience() {
   if (!mounted) return null;
 
   return (
-    <main className="relative min-h-screen w-full text-foreground overflow-x-hidden selection:bg-[#CF5C36] selection:text-white">
+    <main className="relative min-h-screen w-full text-foreground overflow-x-hidden selection:bg-[#CF5C36] selection:text-white bg-[#030303]">
+      
+      {/* GSAP Cinematic Loader */}
+      {showLoader && <NoxuLoader onComplete={() => setShowLoader(false)} />}
+
       <GlassFilter />
 
       <InteractiveGradientBackground dark={false} intensity={1}>
@@ -220,8 +324,7 @@ export function WaitlistExperience() {
             </div>
           </div>
 
-
-{/* --- PASTE THIS RIGHT BELOW YOUR WAITLIST FORM CONTAINER --- */}
+          {/* --- PASTE THIS RIGHT BELOW YOUR WAITLIST FORM CONTAINER --- */}
           
           {/* Product Hunt Embed - Dark Glass Theme */}
           <div className="mt-20 sm:mt-24 mb-4 mx-auto w-full max-w-[420px] p-5 rounded-2xl bg-white/[0.02] border border-white/[0.05] backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_1px_rgba(255,255,255,0.05)] transition-all hover:-translate-y-1 hover:shadow-[0_15px_40px_rgba(255,97,84,0.15)] duration-500 animate-in fade-in slide-in-from-bottom-8 delay-700">
@@ -252,7 +355,6 @@ export function WaitlistExperience() {
           </div>
           
           {/* --- END OF PRODUCT HUNT EMBED --- */}
-
 
           {/* Hyper-Premium Liquid Glass Feature Cards with Editorial Numbers */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8 w-full max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-12 duration-1000 delay-500 fill-mode-both font-sans mt-12">
@@ -355,9 +457,7 @@ export function WaitlistExperience() {
             </div>
           </div>
         </div>
-
       </InteractiveGradientBackground>
-      
     </main>
   );
 }
