@@ -37,49 +37,52 @@ const NoxuLoader = ({ onComplete }: { onComplete: () => void }) => {
     // Lock scrolling while loader is active
     document.body.style.overflow = "hidden";
 
-    const tl = gsap.timeline({
-      onComplete: () => {
-        document.body.style.overflow = "auto"; // Unlock scrolling
-        onComplete();
-      },
-    });
+    // FIXED: Using gsap.context() prevents the double-render bug in React 18 Strict Mode
+    let ctx = gsap.context(() => {
+      const tl = gsap.timeline({
+        onComplete: () => {
+          document.body.style.overflow = "auto"; // Unlock scrolling
+          onComplete();
+        },
+      });
 
-    // 1. Fade in the whole NOXU word from the dark
-    tl.fromTo(
-      textRef.current,
-      { opacity: 0, scale: 0.8, filter: "blur(10px)" },
-      { opacity: 1, scale: 1, filter: "blur(0px)", duration: 1, ease: "expo.out" }
-    )
-    
-    // 2. The Suspense Pause: X pulses with energy
-    .to(xRef.current, { 
-      textShadow: "0px 0px 40px rgba(207,92,54,0.8)", 
-      duration: 0.5, 
-      yoyo: true, 
-      repeat: 1 
-    }, "+=0.2")
+      // 1. Fade in the whole NOXU word from the dark
+      tl.fromTo(
+        textRef.current,
+        { opacity: 0, scale: 0.8, filter: "blur(10px)" },
+        { opacity: 1, scale: 1, filter: "blur(0px)", duration: 1, ease: "expo.out" }
+      )
+      
+      // 2. The Suspense Pause: X pulses with energy
+      .to(xRef.current, { 
+        textShadow: "0px 0px 40px rgba(207,92,54,0.8)", 
+        duration: 0.5, 
+        yoyo: true, 
+        repeat: 1 
+      }, "+=0.2")
 
-    // 3. The Breakaway: N, O slide left. U, dot slide right, fading out
-    .to([nRef.current, oRef.current], { x: -50, opacity: 0, duration: 0.8, ease: "power3.inOut" }, "split")
-    .to([uRef.current, dotRef.current], { x: 50, opacity: 0, duration: 0.8, ease: "power3.inOut" }, "split")
+      // 3. The Breakaway: N, O slide left. U, dot slide right, fading out
+      .to([nRef.current, oRef.current], { x: -50, opacity: 0, duration: 0.8, ease: "power3.inOut" }, "split")
+      .to([uRef.current, dotRef.current], { x: 50, opacity: 0, duration: 0.8, ease: "power3.inOut" }, "split")
 
-    // 4. The Gateway: The X extends its arms, scaling massively until we fly through it
-    .to(xRef.current, { 
-      scale: 150, 
-      opacity: 0, // Fades out right as it engulfs the screen
-      duration: 1.2, 
-      ease: "power4.inOut" 
-    }, "split+=0.2")
+      // 4. The Gateway: The X extends its arms, scaling massively until we fly through it
+      .to(xRef.current, { 
+        scale: 150, 
+        opacity: 0, // Fades out right as it engulfs the screen
+        duration: 1.2, 
+        ease: "power4.inOut" 
+      }, "split+=0.2")
 
-    // 5. Fade out the black background container to reveal the loaded page
-    .to(containerRef.current, { 
-      opacity: 0, 
-      duration: 0.6, 
-      ease: "power2.out" 
-    }, "-=0.6");
+      // 5. Fade out the black background container to reveal the loaded page
+      .to(containerRef.current, { 
+        opacity: 0, 
+        duration: 0.6, 
+        ease: "power2.out" 
+      }, "-=0.6");
+    }, containerRef);
 
     return () => {
-      tl.kill(); // Cleanup GSAP on unmount
+      ctx.revert(); // <--- This is the magic bullet that stops the duplicate run
       document.body.style.overflow = "auto";
     };
   }, [onComplete]);
