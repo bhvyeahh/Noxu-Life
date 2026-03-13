@@ -6,7 +6,8 @@ import { connectToDatabase } from "@/lib/db/connect";
 import { Request } from "@/lib/db/models/Request";
 import { Beacon } from "@/lib/db/models/Beacon";
 import { User } from "@/lib/db/models/User";
-import { Chat } from "@/lib/db/models/Chat"; // We will create chats here!
+import { Chat } from "@/lib/db/models/Chat"; 
+import { pusherServer } from "@/lib/pusher"; 
 
 async function getSessionUserId() {
   const cookieStore = await cookies();
@@ -42,6 +43,11 @@ export async function sendRequestAction(beaconId: string, message: string) {
       status: "pending",
     });
 
+    const hostId = targetBeacon.hostId.toString();
+    await pusherServer.trigger(`user-${hostId}`, "new-request", {
+      message: "You have a new vibe request!"
+    });
+
     return { success: true };
   } catch (error: any) {
     if (error.code === 11000) return { success: false, error: "You have already requested to join this vibe." };
@@ -50,9 +56,6 @@ export async function sendRequestAction(beaconId: string, message: string) {
   }
 }
 
-/**
- * 2. Fetches requests for the logged-in user's beacons
- */
 export async function getPendingRequestsAction() {
   try {
     await connectToDatabase();
@@ -66,7 +69,7 @@ export async function getPendingRequestsAction() {
     
     const pendingRequests = await Request.find({ 
       beaconId: { $in: myBeaconIds },
-      status: { $in: ["pending", "hold"] } // Fetch both pending and held
+      status: { $in: ["pending", "hold"] } 
     })
     .populate({ path: "senderId", model: User, select: "name age avatar" })
     .populate({ path: "beaconId", model: Beacon, select: "title" })
@@ -93,13 +96,9 @@ export async function getPendingRequestsAction() {
   }
 }
 
-/**
- * 3. Handles Action: Decline
- */
 export async function declineRequestAction(requestId: string) {
   try {
     await connectToDatabase();
-    // We physically delete declined requests to keep the DB clean
     await Request.findByIdAndDelete(requestId);
     return { success: true };
   } catch (error) {
@@ -107,9 +106,6 @@ export async function declineRequestAction(requestId: string) {
   }
 }
 
-/**
- * 4. Handles Action: Hold
- */
 export async function holdRequestAction(requestId: string) {
   try {
     await connectToDatabase();
@@ -121,9 +117,9 @@ export async function holdRequestAction(requestId: string) {
 }
 
 /**
- * 5. Handles Action: Accept (Creates the Chat & Reveals Location)
+ * 5. Handles Action: Accept (Creates the Chat & Includes Initial Message to fix Race Condition)
  */
-export async function acceptRequestAction(requestId: string) {
+export async function acceptRequestAction(requestId: string, initialMessage?: string) {
   try {
     await connectToDatabase();
     const userId = await getSessionUserId();
@@ -132,20 +128,35 @@ export async function acceptRequestAction(requestId: string) {
     const req = await Request.findById(requestId).populate("beaconId");
     if (!req) return { success: false, error: "Request not found" };
 
-    // Update request status
     req.status = "accepted";
     await req.save();
 
-    // CREATE THE CHAT ROOM
+    // Setup the initial messages array
+    const messagesArray = [{
+      senderId: req.senderId,
+      text: req.message, // The Icebreaker
+      timestamp: new Date()
+    }];
+
+    // If the host implicitly accepted by replying, add their message atomically!
+    if (initialMessage) {
+      messagesArray.push({
+        senderId: userId,
+        text: initialMessage,
+        timestamp: new Date()
+      });
+    }
+
     const newChat = await Chat.create({
       beaconId: req.beaconId._id,
-      participants: [userId, req.senderId], // The Host and the Requester
-      expiresAt: req.beaconId.expiresAt, // Chat dies exactly when the beacon dies
-      messages: [{
-        senderId: req.senderId,
-        text: req.message, // Port their icebreaker into the chat as the first message!
-        timestamp: new Date()
-      }]
+      participants: [userId, req.senderId], 
+      expiresAt: req.beaconId.expiresAt, 
+      messages: messagesArray
+    });
+
+    // Notify the sender they were accepted AFTER the chat and message are safely in the DB
+    await pusherServer.trigger(`user-${req.senderId.toString()}`, "request-accepted", {
+      chatId: newChat._id.toString()
     });
 
     return { success: true, chatId: newChat._id.toString() };

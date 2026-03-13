@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import PusherClient from "pusher-js"; // <-- ADDED PUSHER IMPORT
 import { Timer, AlertTriangle, Send, ChevronLeft, Check, MessageCircle, Ban, Navigation, Loader2, Inbox, Sparkles } from "lucide-react";
 
 interface InboxProps {
@@ -23,17 +24,94 @@ export function InboxView({
   handleSendMessage
 }: InboxProps) {
   
-  // State for the chat input box
   const [messageText, setMessageText] = useState("");
   const [isSendingMsg, setIsSendingMsg] = useState(false);
+  
+  // FIXED: Local state to hold live messages without needing to refresh the parent
+  const [liveMessages, setLiveMessages] = useState<any[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Function to handle sending the message
+  // Sync initial messages from the database when a chat is opened
+  useEffect(() => {
+    if (activeChat?.messages) {
+      setLiveMessages(activeChat.messages);
+    } else {
+      setLiveMessages([]);
+    }
+  }, [activeChat]);
+
+  // THE REAL-TIME ENGINE: Listen for incoming Pusher messages
+  useEffect(() => {
+    if (!openedChatId) return;
+    
+    // Clean up ID if it came from the requests tab (e.g., "c-123" -> "123")
+    const actualChatId = openedChatId.startsWith('c-') ? openedChatId.slice(2) : openedChatId;
+
+    const pusher = new PusherClient(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
+      cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
+    });
+
+    const channel = pusher.subscribe(`chat-${actualChatId}`);
+
+    channel.bind("new-message", (incoming: any) => {
+      setLiveMessages((prev) => {
+        // 1. If we already pushed this optimistically when typing, just update the temp ID to the real ID
+        const isOptimistic = prev.some(m => m.id.toString().startsWith('temp-') && m.text === incoming.text);
+        if (isOptimistic) {
+          return prev.map(m => 
+            (m.id.toString().startsWith('temp-') && m.text === incoming.text) 
+              ? { ...m, id: incoming.id } 
+              : m
+          );
+        }
+
+        // 2. Standard duplicate check
+        if (prev.some(m => m.id === incoming.id)) return prev;
+
+        // 3. If it got past the checks, it came from the OTHER window. Add it as "them".
+        return [...prev, {
+          id: incoming.id,
+          senderId: "them", 
+          text: incoming.text,
+          timestamp: incoming.timestamp
+        }];
+      });
+    });
+
+    return () => {
+      pusher.unsubscribe(`chat-${actualChatId}`);
+      pusher.disconnect();
+    };
+  }, [openedChatId]);
+
+  // Auto-scroll to the bottom when new messages appear
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [liveMessages, openedChatId]);
+
+  // Function to handle sending the message (Optimistic UI approach)
   const onSend = async () => {
     if (!messageText.trim() || !openedChatId) return;
     
     setIsSendingMsg(true);
-    await handleSendMessage(openedChatId, messageText);
+    const tempText = messageText.trim();
     setMessageText(""); 
+    
+    // OPTIMISTIC UPDATE: Instantly show the message on our screen without waiting for the DB
+    const tempMsg = {
+      id: `temp-${Date.now()}`,
+      senderId: "me",
+      text: tempText,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setLiveMessages((prev) => [...prev, tempMsg]);
+
+    // Send to backend
+    const actualChatId = openedChatId.startsWith('c-') ? openedChatId.slice(2) : openedChatId;
+    await handleSendMessage(actualChatId, tempText);
+    
     setIsSendingMsg(false);
   };
 
@@ -193,14 +271,14 @@ export function InboxView({
             <Timer className="w-3.5 h-3.5" /> Self-destructs in {activeChat?.expiresIn}
           </div>
           
-          {/* Chat Messages Area */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-gradient-to-b from-transparent to-[#111111]/30">
+          {/* FIXED: Chat Messages Area mapping over liveMessages, with scrollRef attached */}
+          <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-6 bg-gradient-to-b from-transparent to-[#111111]/30">
             <div className="text-center my-6">
               <span className="text-[10px] font-bold text-[#7C7C7C] uppercase tracking-widest bg-white/5 px-4 py-1.5 rounded-full border border-white/10 shadow-sm">
                 Vibe Check Initiated
               </span>
             </div>
-            {activeChat?.messages?.map((msg: any) => (
+            {liveMessages.map((msg: any) => (
               <div key={msg.id} className={`flex flex-col ${msg.senderId === "me" ? "items-end" : "items-start"}`}>
                 <div 
                   className={`max-w-[75%] px-5 py-3 rounded-[24px] shadow-md ${

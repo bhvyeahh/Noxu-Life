@@ -6,6 +6,7 @@ import { connectToDatabase } from "@/lib/db/connect";
 import { Chat } from "@/lib/db/models/Chat";
 import { User } from "@/lib/db/models/User";
 import { Beacon } from "@/lib/db/models/Beacon";
+import { pusherServer } from "@/lib/pusher";
 
 async function getSessionUserId() {
   const cookieStore = await cookies();
@@ -26,19 +27,23 @@ export async function getActiveChatsAction() {
     const userId = await getSessionUserId();
     if (!userId) return { success: false, chats: [] };
 
-    // Register models just in case (Next.js hot-reload fix)
     if (!User) console.log("Registering User");
     if (!Beacon) console.log("Registering Beacon");
 
-    // Find all chats where this user is one of the participants
+    // Fetch chats
     const activeChats = await Chat.find({ participants: userId })
       .populate({ path: "participants", model: User, select: "name avatar" })
       .populate({ path: "beaconId", model: Beacon, select: "title venueName" })
-      .sort({ createdAt: -1 })
       .lean();
 
+    // FIXED: Sort chats so the one with the newest message is ALWAYS at the top
+    activeChats.sort((a: any, b: any) => {
+      const lastMsgA = a.messages?.length > 0 ? new Date(a.messages[a.messages.length - 1].timestamp).getTime() : new Date(a.createdAt || 0).getTime();
+      const lastMsgB = b.messages?.length > 0 ? new Date(b.messages[b.messages.length - 1].timestamp).getTime() : new Date(b.createdAt || 0).getTime();
+      return lastMsgB - lastMsgA;
+    });
+
     const formattedChats = activeChats.map((chat: any) => {
-      // Figure out who the "other" person is so we can display their name/avatar
       const otherUser = chat.participants.find((p: any) => p._id.toString() !== userId) || chat.participants[0];
 
       return {
@@ -49,12 +54,12 @@ export async function getActiveChatsAction() {
         },
         beaconTitle: chat.beaconId?.title || "Unknown Activity",
         location: chat.beaconId?.venueName || "Secret Venue",
-        expiresIn: "Active Now", // Real timer can be calculated later
+        expiresIn: "Active Now", 
         messages: chat.messages.map((msg: any, index: number) => ({
-          id: `m-${index}`,
+          id: msg._id ? msg._id.toString() : `m-${index}`,
           senderId: msg.senderId.toString() === userId ? "me" : "them",
+          rawSenderId: msg.senderId.toString(), 
           text: msg.text,
-          // Format time as "8:05 PM"
           timestamp: new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }))
       };
@@ -67,9 +72,6 @@ export async function getActiveChatsAction() {
   }
 }
 
-/**
- * Pushes a new text message into an existing chat room
- */
 export async function sendMessageAction(chatId: string, text: string) {
   try {
     await connectToDatabase();
@@ -79,14 +81,32 @@ export async function sendMessageAction(chatId: string, text: string) {
     const chat = await Chat.findById(chatId);
     if (!chat) return { success: false, error: "Chat not found" };
 
-    // Push the new message into the MongoDB array
-    chat.messages.push({
+    const newMessage = {
       senderId: userId,
       text: text,
       timestamp: new Date()
+    };
+
+    chat.messages.push(newMessage);
+    await chat.save();
+
+    const formattedTimestamp = newMessage.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    // 1. Trigger the specific chat room (updates the UI if they are physically inside this chat)
+    await pusherServer.trigger(`chat-${chatId}`, "new-message", {
+      id: `m-${chat.messages.length - 1}`, 
+      rawSenderId: userId, 
+      text: text,
+      timestamp: formattedTimestamp
     });
 
-    await chat.save();
+    // 2. FIXED: Trigger the OTHER user's personal global channel. 
+    // This forces their Dashboard to refresh the chat list and bump this chat to the top, even if they are in another menu.
+    const otherParticipantId = chat.participants.find((p: any) => p.toString() !== userId)?.toString();
+    if (otherParticipantId) {
+      await pusherServer.trigger(`user-${otherParticipantId}`, "chat-updated", { chatId });
+    }
+
     return { success: true };
   } catch (error) {
     console.error("Error sending message:", error);

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import PusherClient from "pusher-js";
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { DashboardDock } from "@/components/dashboard/DashboardDock";
 import { BrowseView } from "@/components/dashboard/BrowseView";
@@ -25,84 +26,102 @@ export default function DashboardPage() {
   const [browseView, setBrowseView] = useState<"list" | "map">("list");
   const [inboxView, setInboxView] = useState<InboxViewType>("requests");
 
-  // Dynamic State
   const [beacons, setBeacons] = useState<any[]>([]);
   const [isLoadingFeed, setIsLoadingFeed] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [userLoc, setUserLoc] = useState<{lat: number, lng: number} | undefined>(undefined);
 
   const [requests, setRequests] = useState<any[]>([]);
   const [activeChats, setActiveChats] = useState<any[]>([]);
   const [requestedIds, setRequestedIds] = useState<string[]>([]);
 
-  // Modals & Chat State
   const [isPosting, setIsPosting] = useState(false);
   const [openedChatId, setOpenedChatId] = useState<string | null>(null);
   const [requestingBeaconId, setRequestingBeaconId] = useState<string | null>(null);
   const [icebreaker, setIcebreaker] = useState("");
 
-  // --- FETCH REAL BEACONS (Now with GPS) ---
   const fetchBeacons = async (lat?: number, lng?: number) => {
     setIsLoadingFeed(true);
-    const res = await getActiveBeaconsAction(lat, lng);
-    if (res.success) {
-      setBeacons(res.beacons || []);
-    } else {
+    try {
+      const fetchLat = lat ?? userLoc?.lat;
+      const fetchLng = lng ?? userLoc?.lng;
+      const res = await getActiveBeaconsAction(fetchLat, fetchLng);
+      if (res.success) {
+        setBeacons(res.beacons || []);
+      } else {
+        setBeacons([]);
+      }
+    } catch (e) {
       setBeacons([]);
+    } finally {
+      setIsLoadingFeed(false);
     }
-    setIsLoadingFeed(false);
   };
 
   const fetchCurrentUser = async () => {
     const res = await getCurrentUserAction();
-    if (res.success) {
-      setCurrentUser(res.user);
-    }
+    if (res.success) setCurrentUser(res.user);
   };
 
-  // Load feed, inbox, and chats on mount
+  const fetchInbox = async () => {
+    const res = await getPendingRequestsAction();
+    if (res.success) setRequests(res.requests || []);
+  };
+
+  const fetchChats = async () => {
+    const res = await getActiveChatsAction();
+    if (res.success) setActiveChats(res.chats || []);
+  };
+
   useEffect(() => {
     fetchCurrentUser();
+    fetchInbox();
+    fetchChats();
+
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          fetchBeacons(position.coords.latitude, position.coords.longitude);
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          setUserLoc({ lat, lng });
+          fetchBeacons(lat, lng); 
         },
         (error) => {
           console.warn("Location access denied or failed. Fetching global feed.");
-          fetchBeacons();
+          fetchBeacons(); 
         },
+        { timeout: 5000 } 
       );
     } else {
       fetchBeacons();
     }
-
-    fetchInbox();
-    fetchChats();
   }, []);
 
-  // --- FETCH REAL INBOX REQUESTS ---
-  const fetchInbox = async () => {
-    const res = await getPendingRequestsAction();
-    if (res.success) {
-      setRequests(res.requests || []);
-    }
-  };
-
-  // --- FETCH REAL CHATS ---
-  const fetchChats = async () => {
-    const res = await getActiveChatsAction();
-    if (res.success) {
-      setActiveChats(res.chats || []);
-    }
-  };
-
+  // 2. THE GLOBAL LISTENER
   useEffect(() => {
-    fetchBeacons();
-    fetchInbox();
-    fetchChats();
-  }, []);
+    const userId = currentUser?._id || currentUser?.id;
+    if (!userId) return;
 
-  // --- ACTIONS ---
+    const pusher = new PusherClient(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
+      cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
+    });
+
+    const channel = pusher.subscribe(`user-${userId}`);
+    
+    // Listeners for global updates
+    channel.bind("new-request", () => fetchInbox());
+    channel.bind("request-accepted", () => fetchChats());
+    
+    // FIXED: This forces the app to update the active chats list (and re-sort it)
+    // whenever ANY message is received in ANY chat you are a part of.
+    channel.bind("chat-updated", () => fetchChats());
+
+    return () => {
+      pusher.unsubscribe(`user-${userId}`);
+      pusher.disconnect();
+    };
+  }, [currentUser]);
+
   const handleSendRequest = () => {
     if (requestingBeaconId) {
       setRequestedIds([...requestedIds, requestingBeaconId]);
@@ -111,7 +130,6 @@ export default function DashboardPage() {
     }
   };
 
-  // --- HOST ACTIONS ---
   const handleAccept = async (requestId: string) => {
     setRequests(requests.filter((r) => r.id !== requestId));
     const res = await acceptRequestAction(requestId);
@@ -126,9 +144,7 @@ export default function DashboardPage() {
   };
 
   const handleHold = async (requestId: string) => {
-    setRequests(
-      requests.map((r) => (r.id === requestId ? { ...r, status: "hold" } : r)),
-    );
+    setRequests(requests.map((r) => (r.id === requestId ? { ...r, status: "hold" } : r)));
     await holdRequestAction(requestId);
   };
 
@@ -137,22 +153,57 @@ export default function DashboardPage() {
     await declineRequestAction(requestId);
   };
 
-  // --- CHAT ACTIONS ---
-  const handleSendMessage = async (chatId: string, text: string) => {
-    const res = await sendMessageAction(chatId, text);
-    if (res.success) {
-      fetchChats();
+  const handleSendMessage = async (targetId: string, text: string) => {
+    const isRequest = requests.some((r) => r.id === targetId);
+
+    if (isRequest) {
+      const acceptRes = await acceptRequestAction(targetId, text);
+      
+      if (acceptRes.success && acceptRes.chatId) {
+        setRequests(requests.filter((r) => r.id !== targetId));
+        await fetchChats(); 
+        setOpenedChatId(acceptRes.chatId);
+        setInboxView("active");
+      } else {
+        alert("Failed to initiate chat.");
+      }
     } else {
-      alert("Failed to send message");
+      const res = await sendMessageAction(targetId, text);
+      if (res.success) {
+        fetchChats();
+      } else {
+        alert("Failed to send message");
+      }
     }
   };
 
-  const activeChat = activeChats.find((c) => c.id === openedChatId);
+  let activeChat = activeChats.find((c) => c.id === openedChatId);
+
+  if (!activeChat && openedChatId?.startsWith("c-")) {
+    const reqId = openedChatId.replace("c-", "");
+    const req = requests.find((r) => r.id === reqId);
+    
+    if (req) {
+      activeChat = {
+        id: openedChatId,
+        user: req.user,
+        beaconTitle: req.beaconTitle,
+        location: "Pending Acceptance",
+        expiresIn: "Hold",
+        messages: [
+          {
+            id: `msg-${req.id}`,
+            senderId: "them",
+            text: req.message,
+            timestamp: req.timeAgo,
+          }
+        ],
+      };
+    }
+  }
 
   return (
     <main className="relative min-h-screen bg-[#000000] text-[#EEE5E9] selection:bg-[#CF5C36] selection:text-white pb-32 font-sans">
-      
-      {/* Premium Ambient Background Glow */}
       <div className="absolute top-0 inset-x-0 h-[500px] bg-gradient-to-b from-[#CF5C36]/5 via-[#CF5C36]/[0.02] to-transparent pointer-events-none" />
 
       {!openedChatId && (
@@ -163,7 +214,6 @@ export default function DashboardPage() {
         {activeTab === "browse" &&
           !openedChatId &&
           (isLoadingFeed ? (
-            /* Premium Loading State */
             <div className="flex flex-col justify-center items-center h-64 gap-5 animate-in fade-in duration-500">
               <div className="relative w-12 h-12 flex items-center justify-center">
                 <div className="absolute inset-0 border-2 border-white/5 rounded-full" />
@@ -174,10 +224,8 @@ export default function DashboardPage() {
               </p>
             </div>
           ) : beacons.length === 0 ? (
-            /* Premium Empty State */
             <div className="flex flex-col items-center justify-center py-24 sm:py-32 px-4 animate-in fade-in zoom-in-95 duration-500">
               <div className="relative w-20 h-20 mb-8 flex items-center justify-center rounded-full bg-[#111111] border border-white/5 shadow-[0_0_40px_rgba(207,92,54,0.05)]">
-                {/* CSS Pulse Radar Effect */}
                 <div className="absolute w-full h-full rounded-full border border-[#CF5C36]/20 animate-ping opacity-20" />
                 <div className="absolute w-8 h-8 rounded-full border border-[#CF5C36]/40 animate-ping opacity-40 delay-150" />
                 <div className="w-3 h-3 bg-[#CF5C36] rounded-full shadow-[0_0_15px_rgba(207,92,54,0.8)]" />
@@ -236,7 +284,7 @@ export default function DashboardPage() {
         icebreaker={icebreaker}
         setIcebreaker={setIcebreaker}
         handleSendRequest={handleSendRequest}
-        onSuccess={() => fetchBeacons()}
+        onSuccess={() => fetchBeacons(userLoc?.lat, userLoc?.lng)} 
       />
     </main>
   );
