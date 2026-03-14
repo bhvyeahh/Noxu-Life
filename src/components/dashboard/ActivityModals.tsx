@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Coffee, Music, Utensils, Send, Loader2, AlertTriangle } from "lucide-react";
+import { X, Coffee, Music, Utensils, Send, Loader2, AlertTriangle, Clock, Users } from "lucide-react";
 import { VenueAutocomplete } from "./VenueAutocomplete";
 import { createBeaconAction } from "@/actions/beacon";
 import { sendRequestAction } from "@/actions/request";
@@ -23,19 +23,30 @@ export function ActivityModals({
   icebreaker, setIcebreaker, handleSendRequest, onSuccess
 }: ModalsProps) {
   
-  // State for the Create Activity Form
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [vibe, setVibe] = useState<"coffee" | "dining" | "culture" | "nightlife">("coffee");
   const [venue, setVenue] = useState<{ name: string; lat: number; lng: number } | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // NEW: State for Sending Request
+  const [eventTime, setEventTime] = useState(""); 
+  const [capacity, setCapacity] = useState<number>(1);
+  const [minDateTime, setMinDateTime] = useState("");
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSendingRequest, setIsSendingRequest] = useState(false);
 
-  // --- POST BEACON LOGIC ---
+  // Calculate the exact current local time to disable past dates in the calendar picker
+  useEffect(() => {
+    if (isPosting) {
+      const now = new Date();
+      // Format to YYYY-MM-DDThh:mm for the datetime-local input
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      setMinDateTime(now.toISOString().slice(0, 16));
+    }
+  }, [isPosting]);
+
   const handleBroadcast = async () => {
-    if (!title || !description || !vibe || !venue) return;
+    if (!title || !description || !vibe || !venue || !eventTime || capacity < 1) return;
     
     setIsSubmitting(true);
     const res = await createBeaconAction({
@@ -44,22 +55,25 @@ export function ActivityModals({
       vibe,
       venueName: venue.name,
       lat: venue.lat,
-      lng: venue.lng
+      lng: venue.lng,
+      eventTime, 
+      capacity   
     });
 
     if (res.success) {
       setIsPosting(false);
-      onSuccess(); // Refreshes the feed
+      onSuccess(); 
       setTitle("");
       setDescription("");
       setVenue(null);
+      setEventTime("");
+      setCapacity(1);
     } else {
       alert(res.error);
     }
     setIsSubmitting(false);
   };
 
-  // --- SEND REQUEST LOGIC (Now hits MongoDB) ---
   const onSendRequestClick = async () => {
     if (!requestingBeaconId || !icebreaker.trim()) return;
     
@@ -67,12 +81,15 @@ export function ActivityModals({
     const res = await sendRequestAction(requestingBeaconId, icebreaker);
     
     if (res.success) {
-      handleSendRequest(); // Updates the UI to show "Requested" state
+      handleSendRequest(); 
     } else {
       alert(res.error || "Failed to send request.");
     }
     setIsSendingRequest(false);
   };
+
+  // Validation to double-check they didn't manually type a past time
+  const isPastTime = eventTime ? new Date(eventTime).getTime() <= new Date().getTime() : false;
 
   return (
     <>
@@ -105,7 +122,7 @@ export function ActivityModals({
         )}
       </AnimatePresence>
 
-      {/* HORIZONTAL CREATE ACTIVITY MODAL */}
+      {/* CREATE ACTIVITY MODAL */}
       <AnimatePresence>
         {isPosting && (
           <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 pointer-events-auto">
@@ -136,13 +153,44 @@ export function ActivityModals({
                     <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Extra ticket for The Batman" className="w-full h-12 px-4 bg-white/5 border border-white/10 rounded-xl focus:border-[#CF5C36] text-sm text-white placeholder:text-[#7C7C7C] outline-none transition-all" />
                   </div>
 
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="relative group">
+                      <label className="text-xs font-semibold text-[#7C7C7C] uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5" /> Event Time
+                      </label>
+                      <input 
+                        type="datetime-local" 
+                        value={eventTime} 
+                        min={minDateTime}
+                        onChange={(e) => setEventTime(e.target.value)} 
+                        className={`w-full h-12 px-4 bg-white/5 border rounded-xl focus:bg-white/10 text-sm text-white outline-none transition-all [color-scheme:dark] cursor-pointer ${isPastTime && eventTime ? "border-red-500/50 focus:border-red-500" : "border-white/10 hover:border-white/20 focus:border-[#CF5C36]"}`}
+                      />
+                      {isPastTime && eventTime && (
+                        <p className="absolute -bottom-5 left-1 text-[10px] text-red-400 font-medium">Please select a future time.</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-[#7C7C7C] uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5" /> Spots Available
+                      </label>
+                      <input 
+                        type="number" 
+                        min="1"
+                        max="20"
+                        value={capacity} 
+                        onChange={(e) => setCapacity(parseInt(e.target.value) || 1)} 
+                        className="w-full h-12 px-4 bg-white/5 border border-white/10 hover:border-white/20 rounded-xl focus:border-[#CF5C36] focus:bg-white/10 text-sm text-white outline-none transition-all" 
+                      />
+                    </div>
+                  </div>
+
                   <div>
                     <label className="text-xs font-semibold text-[#7C7C7C] uppercase tracking-wider mb-3 block">Details</label>
                     <textarea 
                       value={description} 
                       onChange={(e) => setDescription(e.target.value)} 
                       placeholder="e.g. I have an extra ticket in row G. Looking for a fellow DC fan to grab drinks beforehand." 
-                      className="w-full h-24 p-4 bg-white/5 border border-white/10 rounded-xl focus:border-[#CF5C36] text-sm text-white placeholder:text-[#7C7C7C] outline-none transition-all resize-none" 
+                      className="w-full h-24 p-4 bg-white/5 border border-white/10 hover:border-white/20 rounded-xl focus:border-[#CF5C36] focus:bg-white/10 text-sm text-white placeholder:text-[#7C7C7C] outline-none transition-all resize-none" 
                     />
                   </div>
                 </div>
@@ -165,7 +213,7 @@ export function ActivityModals({
 
                   <button 
                     onClick={handleBroadcast} 
-                    disabled={isSubmitting || !title || !description || !venue}
+                    disabled={isSubmitting || !title || !description || !venue || !eventTime || capacity < 1 || isPastTime}
                     className="w-full mt-auto h-14 bg-[#CF5C36] hover:bg-[#b04a29] disabled:opacity-50 disabled:hover:bg-[#CF5C36] text-white font-semibold rounded-xl transition-all shadow-[0_4px_14px_rgba(207,92,54,0.4)] flex items-center justify-center gap-2"
                   >
                     {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "Broadcast to Nearby"}

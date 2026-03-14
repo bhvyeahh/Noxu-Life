@@ -12,6 +12,29 @@ interface BrowseProps {
 }
 
 export function BrowseView({ browseView, setBrowseView, beacons, requestedIds, setRequestingBeaconId }: BrowseProps) {
+  
+  // PREMIUM DATE FORMATTER: Turns ISO string into "Today • 8:30 PM" or "Oct 24 • 8:30 PM"
+  const formatEventTime = (timeString: string | undefined, eventTimeObj: string | undefined) => {
+    // Use the raw eventTime if provided by backend, otherwise try to use the fallback time string
+    const targetDate = eventTimeObj ? new Date(eventTimeObj) : new Date(timeString || "");
+    
+    // If it's an invalid date (e.g. backend just sent "8:30 PM" string), just return the string safely
+    if (isNaN(targetDate.getTime())) return timeString || "Active Now";
+
+    const today = new Date();
+    const isToday = today.toDateString() === targetDate.toDateString();
+    
+    const timeFormatted = targetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    if (isToday) {
+      return `Today • ${timeFormatted}`;
+    } else {
+      const month = targetDate.toLocaleString('default', { month: 'short' });
+      const day = targetDate.getDate();
+      return `${month} ${day} • ${timeFormatted}`;
+    }
+  };
+
   return (
     <div className="px-4 sm:px-6 pb-6 animate-in fade-in slide-in-from-bottom-4 duration-500 font-sans">
       
@@ -63,7 +86,7 @@ export function BrowseView({ browseView, setBrowseView, beacons, requestedIds, s
                 <div className="flex items-start justify-between mb-2">
                   <h3 className="text-xl font-semibold text-white tracking-tight">{beacon.title}</h3>
                   <span className="flex-shrink-0 text-[10px] font-bold px-2.5 py-1 bg-[#EFC88B]/10 text-[#EFC88B] rounded-full border border-[#EFC88B]/20 uppercase tracking-wider">
-                    {beacon.spotsLeft} spot left
+                    {beacon.spotsLeft} spot{beacon.spotsLeft !== 1 ? 's' : ''} left
                   </span>
                 </div>
                 
@@ -72,8 +95,9 @@ export function BrowseView({ browseView, setBrowseView, beacons, requestedIds, s
                 </p>
                 
                 <div className="flex flex-wrap items-center gap-2.5">
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 rounded-full border border-white/10 text-xs font-medium text-white/70 backdrop-blur-sm">
-                    <Clock className="w-3.5 h-3.5 text-[#7C7C7C]" /> {beacon.time}
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 rounded-full border border-white/10 text-xs font-medium text-white/80 backdrop-blur-sm">
+                    {/* UPDATED CLOCK BADGE */}
+                    <Clock className="w-3.5 h-3.5 text-[#CF5C36]" /> {formatEventTime(beacon.time, beacon.eventTime)}
                   </div>
                   <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#CF5C36]/10 rounded-full border border-[#CF5C36]/20 text-xs font-semibold text-[#CF5C36] backdrop-blur-sm">
                     <MapPin className="w-3.5 h-3.5" /> {beacon.distance}
@@ -116,11 +140,11 @@ export function BrowseView({ browseView, setBrowseView, beacons, requestedIds, s
                 <img src={beacon.user.avatar} className="relative z-10 w-12 h-12 rounded-full border-2 border-[#CF5C36] shadow-[0_0_15px_rgba(207,92,54,0.5)] group-hover:scale-110 transition-transform duration-300" />
               </div>
               
-              {/* Premium Map Tooltip */}
+              {/* UPDATED PREMIUM MAP TOOLTIP */}
               <div className="absolute top-full mt-3 left-1/2 -translate-x-1/2 w-max px-4 py-2 bg-[#111111]/90 backdrop-blur-xl border border-white/10 rounded-2xl text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-20 shadow-xl flex items-center gap-2">
                 <span className="font-bold text-[#CF5C36] tracking-tight">{beacon.title}</span> 
                 <span className="text-white/30">•</span> 
-                <span className="text-white/80 font-medium">{beacon.distance}</span>
+                <span className="text-white/80 font-medium">{formatEventTime(beacon.time, beacon.eventTime)}</span>
               </div>
             </div>
           ))}

@@ -33,10 +33,10 @@ export async function getActiveChatsAction() {
     // Fetch chats
     const activeChats = await Chat.find({ participants: userId })
       .populate({ path: "participants", model: User, select: "name avatar" })
-      .populate({ path: "beaconId", model: Beacon, select: "title venueName" })
+      .populate({ path: "beaconId", model: Beacon, select: "title venueName expiresAt" })
       .lean();
 
-    // FIXED: Sort chats so the one with the newest message is ALWAYS at the top
+    // Sort chats so the one with the newest message is ALWAYS at the top
     activeChats.sort((a: any, b: any) => {
       const lastMsgA = a.messages?.length > 0 ? new Date(a.messages[a.messages.length - 1].timestamp).getTime() : new Date(a.createdAt || 0).getTime();
       const lastMsgB = b.messages?.length > 0 ? new Date(b.messages[b.messages.length - 1].timestamp).getTime() : new Date(b.createdAt || 0).getTime();
@@ -45,6 +45,9 @@ export async function getActiveChatsAction() {
 
     const formattedChats = activeChats.map((chat: any) => {
       const otherUser = chat.participants.find((p: any) => p._id.toString() !== userId) || chat.participants[0];
+      
+      // Get exact expiration time from the chat or the parent beacon
+      const exactExpiresAt = chat.expiresAt || chat.beaconId?.expiresAt;
 
       return {
         id: chat._id.toString(),
@@ -54,7 +57,8 @@ export async function getActiveChatsAction() {
         },
         beaconTitle: chat.beaconId?.title || "Unknown Activity",
         location: chat.beaconId?.venueName || "Secret Venue",
-        expiresIn: "Active Now", 
+        // Send the real ISO string timestamp to the frontend
+        expiresIn: exactExpiresAt ? new Date(exactExpiresAt).toISOString() : "Active Now", 
         messages: chat.messages.map((msg: any, index: number) => ({
           id: msg._id ? msg._id.toString() : `m-${index}`,
           senderId: msg.senderId.toString() === userId ? "me" : "them",
@@ -92,7 +96,7 @@ export async function sendMessageAction(chatId: string, text: string) {
 
     const formattedTimestamp = newMessage.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
-    // 1. Trigger the specific chat room (updates the UI if they are physically inside this chat)
+    // 1. Trigger the specific chat room
     await pusherServer.trigger(`chat-${chatId}`, "new-message", {
       id: `m-${chat.messages.length - 1}`, 
       rawSenderId: userId, 
@@ -100,8 +104,7 @@ export async function sendMessageAction(chatId: string, text: string) {
       timestamp: formattedTimestamp
     });
 
-    // 2. FIXED: Trigger the OTHER user's personal global channel. 
-    // This forces their Dashboard to refresh the chat list and bump this chat to the top, even if they are in another menu.
+    // 2. Trigger the OTHER user's personal global channel
     const otherParticipantId = chat.participants.find((p: any) => p.toString() !== userId)?.toString();
     if (otherParticipantId) {
       await pusherServer.trigger(`user-${otherParticipantId}`, "chat-updated", { chatId });

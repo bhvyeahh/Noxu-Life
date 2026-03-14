@@ -10,6 +10,9 @@ export interface IBeacon extends Document {
     type: "Point";
     coordinates: number[]; // [longitude, latitude]
   };
+  eventTime: Date;      // NEW: When the activity actually happens
+  capacity: number;     // NEW: Max number of guests allowed
+  joinedCount: number;  // NEW: How many requests have been accepted
   status: "active" | "filled" | "expired";
   expiresAt: Date;
 }
@@ -25,6 +28,13 @@ const BeaconSchema = new Schema<IBeacon>(
       type: { type: String, enum: ["Point"], required: true },
       coordinates: { type: [Number], required: true }, // Must be [lng, lat]
     },
+    
+    // --- THE NEW EVENT LOGIC ---
+    eventTime: { type: Date, required: true },
+    capacity: { type: Number, required: true, min: 1 }, 
+    joinedCount: { type: Number, default: 0 },
+    // ---------------------------
+
     status: { type: String, enum: ["active", "filled", "expired"], default: "active" },
     expiresAt: { type: Date, required: true },
   },

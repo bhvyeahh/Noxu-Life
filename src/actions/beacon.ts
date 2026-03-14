@@ -39,6 +39,8 @@ export async function createBeaconAction(data: {
   venueName: string;
   lat: number;
   lng: number;
+  eventTime: string | Date; // NEW
+  capacity: number;         // NEW
 }) {
   try {
     await connectToDatabase();
@@ -46,7 +48,9 @@ export async function createBeaconAction(data: {
     
     if (!userId) return { success: false, error: "Unauthorized" };
 
-    const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000);
+    // Set the physical database deletion time to exactly 24 hours AFTER the event time
+    const eventDate = new Date(data.eventTime);
+    const expiresAt = new Date(eventDate.getTime() + 24 * 60 * 60 * 1000);
 
     const newBeacon = await Beacon.create({
       hostId: userId,
@@ -58,6 +62,10 @@ export async function createBeaconAction(data: {
         type: "Point",
         coordinates: [data.lng, data.lat], // MongoDB requires [lng, lat]
       },
+      eventTime: eventDate,
+      capacity: data.capacity,
+      joinedCount: 0,
+      status: "active",
       expiresAt,
     });
 
@@ -111,6 +119,10 @@ export async function getActiveBeaconsAction(userLat?: number, userLng?: number)
         distanceString = `${calculateDistanceKm(userLat, userLng, beaconLat, beaconLng)} km`;
       }
 
+      // Calculate spots left and format the time
+      const spotsLeft = b.capacity - (b.joinedCount || 0);
+      const formattedTime = new Date(b.eventTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
       return {
         id: b._id.toString(),
         user: {
@@ -120,10 +132,11 @@ export async function getActiveBeaconsAction(userLat?: number, userLng?: number)
         },
         title: b.title,
         description: b.description,
-        time: "Active Now",
+        time: formattedTime, // e.g., "8:00 PM"
+        eventTime: b.eventTime,
         location: "Hidden",
         distance: distanceString,
-        spotsLeft: 1,
+        spotsLeft: spotsLeft, // Actual dynamic capacity
         mapPos: { 
           top: `${Math.floor(Math.random() * 60 + 20)}%`, 
           left: `${Math.floor(Math.random() * 60 + 20)}%` 

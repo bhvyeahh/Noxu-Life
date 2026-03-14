@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import PusherClient from "pusher-js"; // <-- ADDED PUSHER IMPORT
+import PusherClient from "pusher-js";
 import { Timer, AlertTriangle, Send, ChevronLeft, Check, MessageCircle, Ban, Navigation, Loader2, Inbox, Sparkles } from "lucide-react";
 
 interface InboxProps {
@@ -27,11 +27,36 @@ export function InboxView({
   const [messageText, setMessageText] = useState("");
   const [isSendingMsg, setIsSendingMsg] = useState(false);
   
-  // FIXED: Local state to hold live messages without needing to refresh the parent
   const [liveMessages, setLiveMessages] = useState<any[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Sync initial messages from the database when a chat is opened
+  // NEW: Live Timer Engine
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    // Tick every second to update the real-time countdowns
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Format the backend timestamp into a clean HH:MM:SS format
+  const formatTimeLeft = (expiresAt: string | undefined | null) => {
+    if (!expiresAt) return "";
+    // If it's a "Hold" request, or an old fallback string, return it as is
+    if (expiresAt === "Hold" || expiresAt === "Active Now") return expiresAt;
+
+    const targetTime = new Date(expiresAt).getTime();
+    if (isNaN(targetTime)) return expiresAt;
+
+    const diff = targetTime - now;
+    if (diff <= 0) return "00:00:00"; // Time's up
+
+    const h = Math.floor(diff / (1000 * 60 * 60)).toString().padStart(2, '0');
+    const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)).toString().padStart(2, '0');
+    const s = Math.floor((diff % (1000 * 60)) / 1000).toString().padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  };
+
   useEffect(() => {
     if (activeChat?.messages) {
       setLiveMessages(activeChat.messages);
@@ -40,11 +65,9 @@ export function InboxView({
     }
   }, [activeChat]);
 
-  // THE REAL-TIME ENGINE: Listen for incoming Pusher messages
   useEffect(() => {
     if (!openedChatId) return;
     
-    // Clean up ID if it came from the requests tab (e.g., "c-123" -> "123")
     const actualChatId = openedChatId.startsWith('c-') ? openedChatId.slice(2) : openedChatId;
 
     const pusher = new PusherClient(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
@@ -55,7 +78,6 @@ export function InboxView({
 
     channel.bind("new-message", (incoming: any) => {
       setLiveMessages((prev) => {
-        // 1. If we already pushed this optimistically when typing, just update the temp ID to the real ID
         const isOptimistic = prev.some(m => m.id.toString().startsWith('temp-') && m.text === incoming.text);
         if (isOptimistic) {
           return prev.map(m => 
@@ -64,11 +86,8 @@ export function InboxView({
               : m
           );
         }
-
-        // 2. Standard duplicate check
         if (prev.some(m => m.id === incoming.id)) return prev;
 
-        // 3. If it got past the checks, it came from the OTHER window. Add it as "them".
         return [...prev, {
           id: incoming.id,
           senderId: "them", 
@@ -84,14 +103,12 @@ export function InboxView({
     };
   }, [openedChatId]);
 
-  // Auto-scroll to the bottom when new messages appear
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [liveMessages, openedChatId]);
 
-  // Function to handle sending the message (Optimistic UI approach)
   const onSend = async () => {
     if (!messageText.trim() || !openedChatId) return;
     
@@ -99,7 +116,6 @@ export function InboxView({
     const tempText = messageText.trim();
     setMessageText(""); 
     
-    // OPTIMISTIC UPDATE: Instantly show the message on our screen without waiting for the DB
     const tempMsg = {
       id: `temp-${Date.now()}`,
       senderId: "me",
@@ -108,7 +124,6 @@ export function InboxView({
     };
     setLiveMessages((prev) => [...prev, tempMsg]);
 
-    // Send to backend
     const actualChatId = openedChatId.startsWith('c-') ? openedChatId.slice(2) : openedChatId;
     await handleSendMessage(actualChatId, tempText);
     
@@ -120,7 +135,6 @@ export function InboxView({
       {!openedChatId ? (
         <div className="px-4 sm:px-6 pb-6">
           
-          {/* Premium Segmented Control */}
           <div className="relative flex bg-[#111111]/80 backdrop-blur-2xl border border-white/10 rounded-full p-1.5 mb-8 shadow-inner supports-[backdrop-filter]:bg-black/40">
             <button 
               onClick={() => setInboxView("requests")} 
@@ -220,8 +234,8 @@ export function InboxView({
                   <div className="flex-1 overflow-hidden pr-2">
                     <div className="flex justify-between items-center mb-1.5">
                       <h3 className="font-semibold text-white text-base tracking-tight">{chat.user.name}</h3>
-                      <span className="text-[11px] font-medium text-[#CF5C36] flex items-center gap-1 bg-[#CF5C36]/10 px-2 py-0.5 rounded-full border border-[#CF5C36]/20">
-                        <Timer className="w-3 h-3"/> {chat.expiresIn}
+                      <span className="text-[11px] font-mono text-[#CF5C36] flex items-center gap-1 bg-[#CF5C36]/10 px-2 py-0.5 rounded-full border border-[#CF5C36]/20">
+                        <Timer className="w-3 h-3"/> {formatTimeLeft(chat.expiresIn)}
                       </span>
                     </div>
                     <p className="text-sm text-[#7C7C7C] truncate font-light tracking-wide">{chat.beaconTitle}</p>
@@ -234,7 +248,6 @@ export function InboxView({
       ) : (
         <div className="fixed inset-0 z-50 bg-[#000000] flex flex-col animate-in slide-in-from-right-8 duration-300">
           
-          {/* Chat Header */}
           <header className="flex flex-col bg-black/40 backdrop-blur-2xl border-b border-white/[0.08] pt-safe supports-[backdrop-filter]:bg-black/20 z-10">
             <div className="flex items-center justify-between px-2 py-3">
               <div className="flex items-center gap-2">
@@ -250,8 +263,8 @@ export function InboxView({
                 </div>
               </div>
               <div className="flex items-center gap-3 pr-4">
-                <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-[#CF5C36]/10 border border-[#CF5C36]/20 text-[#CF5C36] rounded-full text-xs font-semibold shadow-inner">
-                  <Timer className="w-3.5 h-3.5" /> {activeChat?.expiresIn}
+                <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-[#CF5C36]/10 border border-[#CF5C36]/20 text-[#CF5C36] rounded-full text-xs font-mono font-semibold shadow-inner">
+                  <Timer className="w-3.5 h-3.5" /> {formatTimeLeft(activeChat?.expiresIn)}
                 </div>
                 <button className="p-2 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-all border border-red-500/10 hover:border-red-500/30">
                   <AlertTriangle className="w-4 h-4" />
@@ -267,11 +280,10 @@ export function InboxView({
             </div>
           </header>
 
-          <div className="sm:hidden flex items-center justify-center gap-1.5 py-1.5 bg-[#CF5C36]/10 border-b border-[#CF5C36]/20 text-[#CF5C36] text-[10px] font-bold tracking-widest uppercase">
-            <Timer className="w-3.5 h-3.5" /> Self-destructs in {activeChat?.expiresIn}
+          <div className="sm:hidden flex items-center justify-center gap-1.5 py-1.5 bg-[#CF5C36]/10 border-b border-[#CF5C36]/20 text-[#CF5C36] text-[10px] font-mono font-bold tracking-widest uppercase">
+            <Timer className="w-3.5 h-3.5" /> Self-destructs in {formatTimeLeft(activeChat?.expiresIn)}
           </div>
           
-          {/* FIXED: Chat Messages Area mapping over liveMessages, with scrollRef attached */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-6 bg-gradient-to-b from-transparent to-[#111111]/30">
             <div className="text-center my-6">
               <span className="text-[10px] font-bold text-[#7C7C7C] uppercase tracking-widest bg-white/5 px-4 py-1.5 rounded-full border border-white/10 shadow-sm">
@@ -294,7 +306,6 @@ export function InboxView({
             ))}
           </div>
           
-          {/* Chat Input Area */}
           <div className="p-4 bg-black/40 backdrop-blur-2xl border-t border-white/[0.08] pb-safe supports-[backdrop-filter]:bg-black/20">
             <div className="relative flex items-center max-w-3xl mx-auto">
               <input 

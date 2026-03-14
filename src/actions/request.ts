@@ -25,17 +25,28 @@ async function getSessionUserId() {
 /**
  * 1. Sends a vibe check (request) to a specific beacon
  */
+/**
+ * 1. Sends a vibe check (request) to a specific beacon
+ */
 export async function sendRequestAction(beaconId: string, message: string) {
   try {
     await connectToDatabase();
     const userId = await getSessionUserId();
     if (!userId) return { success: false, error: "Unauthorized" };
 
+    // 1. Fetch the beacon
     const targetBeacon = await Beacon.findById(beaconId);
+    
+    // BUG FIX: Prevent crash if the beacon was already deleted or expired
+    if (!targetBeacon) {
+      return { success: false, error: "This vibe is no longer active or was deleted." };
+    }
+
     if (targetBeacon.hostId.toString() === userId) {
       return { success: false, error: "You cannot request your own beacon." };
     }
 
+    // 2. Create the request
     await Request.create({
       beaconId,
       senderId: userId,
@@ -43,6 +54,7 @@ export async function sendRequestAction(beaconId: string, message: string) {
       status: "pending",
     });
 
+    // 3. Send real-time ping to the host
     const hostId = targetBeacon.hostId.toString();
     await pusherServer.trigger(`user-${hostId}`, "new-request", {
       message: "You have a new vibe request!"
@@ -50,9 +62,18 @@ export async function sendRequestAction(beaconId: string, message: string) {
 
     return { success: true };
   } catch (error: any) {
-    if (error.code === 11000) return { success: false, error: "You have already requested to join this vibe." };
-    console.error("Error sending request:", error);
-    return { success: false, error: "Failed to send request." };
+    console.error("❌ Error sending request:", error);
+    
+    // Check for duplicate request error
+    if (error.code === 11000) {
+      return { success: false, error: "You have already requested to join this vibe." };
+    }
+    
+    // BUG FIX: Pass the ACTUAL database error to the frontend so we can see it in the alert box
+    return { 
+      success: false, 
+      error: error.message || "Server error: Failed to send request." 
+    };
   }
 }
 
@@ -119,6 +140,12 @@ export async function holdRequestAction(requestId: string) {
 /**
  * 5. Handles Action: Accept (Creates the Chat & Includes Initial Message to fix Race Condition)
  */
+/**
+ * 5. Handles Action: Accept (Creates Chat, Passes Timer, and Auto-Kills Full Beacons)
+ */
+/**
+ * 5. Handles Action: Accept (Creates Chat, Passes Timer, and Auto-Kills Full Beacons)
+ */
 export async function acceptRequestAction(requestId: string, initialMessage?: string) {
   try {
     await connectToDatabase();
@@ -128,17 +155,31 @@ export async function acceptRequestAction(requestId: string, initialMessage?: st
     const req = await Request.findById(requestId).populate("beaconId");
     if (!req) return { success: false, error: "Request not found" };
 
+    // 1. Mark request as accepted
     req.status = "accepted";
     await req.save();
 
-    // Setup the initial messages array
+    // 2. Fetch the actual Beacon to update its capacity
+    const targetBeacon = await Beacon.findById(req.beaconId._id);
+    if (!targetBeacon) return { success: false, error: "Beacon no longer exists" };
+
+    // 3. FIX: Safely increment joinedCount (protects against older test beacons)
+    targetBeacon.joinedCount = (targetBeacon.joinedCount || 0) + 1;
+    const capacity = targetBeacon.capacity || 1;
+
+    // 4. FIX: Use "filled" instead of "full" to perfectly match your Mongoose schema!
+    if (targetBeacon.joinedCount >= capacity) {
+      targetBeacon.status = "filled";
+    }
+    await targetBeacon.save();
+
+    // 5. Setup the initial messages array
     const messagesArray = [{
       senderId: req.senderId,
-      text: req.message, // The Icebreaker
+      text: req.message,
       timestamp: new Date()
     }];
 
-    // If the host implicitly accepted by replying, add their message atomically!
     if (initialMessage) {
       messagesArray.push({
         senderId: userId,
@@ -147,21 +188,23 @@ export async function acceptRequestAction(requestId: string, initialMessage?: st
       });
     }
 
+    // 6. Create the Chat and inherit the Beacon's self-destruct timer
     const newChat = await Chat.create({
-      beaconId: req.beaconId._id,
+      beaconId: targetBeacon._id,
       participants: [userId, req.senderId], 
-      expiresAt: req.beaconId.expiresAt, 
+      expiresAt: targetBeacon.expiresAt, 
       messages: messagesArray
     });
 
-    // Notify the sender they were accepted AFTER the chat and message are safely in the DB
+    // Notify the sender they were accepted
     await pusherServer.trigger(`user-${req.senderId.toString()}`, "request-accepted", {
       chatId: newChat._id.toString()
     });
 
     return { success: true, chatId: newChat._id.toString() };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error accepting request:", error);
-    return { success: false, error: "Failed to accept request." };
+    // Pass actual DB error to frontend if it fails again
+    return { success: false, error: error.message || "Failed to accept request." };
   }
 }
