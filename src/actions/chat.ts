@@ -30,9 +30,9 @@ export async function getActiveChatsAction() {
     if (!User) console.log("Registering User");
     if (!Beacon) console.log("Registering Beacon");
 
-    // Fetch chats
+    // Fetch chats (Added 'age' to the select query so it populates correctly)
     const activeChats = await Chat.find({ participants: userId })
-      .populate({ path: "participants", model: User, select: "name avatar" })
+      .populate({ path: "participants", model: User, select: "name avatar age" })
       .populate({ path: "beaconId", model: Beacon, select: "title venueName expiresAt" })
       .lean();
 
@@ -52,7 +52,9 @@ export async function getActiveChatsAction() {
       return {
         id: chat._id.toString(),
         user: {
+          id: otherUser?._id?.toString(), // <--- FIX: Added the database ID here!
           name: otherUser?.name || "Unknown",
+          age: otherUser?.age || 0,       // <--- FIX: Added age here!
           avatar: otherUser?.avatar || "",
         },
         beaconTitle: chat.beaconId?.title || "Unknown Activity",

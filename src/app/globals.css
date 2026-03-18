@@ -101,3 +101,30 @@
     background-position: 100% 100%;
   }
 }
+
+/* FORCE BUTTERY SMOOTH SCROLLING */
+html {
+  /* scroll-behavior: smooth; */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* PREMIUM NOXU SCROLLBAR */
+::-webkit-scrollbar {
+  width: 8px; /* Sleek, thin profile */
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #030303; /* Matches the deep black background */
+  border-left: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(207, 92, 54, 0.3); /* Muted Noxu Orange */
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(207, 92, 54, 0.8); /* Brightens when you hover over it */
+}

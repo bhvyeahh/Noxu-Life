@@ -97,9 +97,10 @@ export async function getPendingRequestsAction() {
     .sort({ createdAt: -1 })
     .lean();
 
-    const formattedRequests = pendingRequests.map((req: any) => ({
+const formattedRequests = pendingRequests.map((req: any) => ({
       id: req._id.toString(),
       user: {
+        id: req.senderId?._id?.toString(), // <--- THIS IS THE MAGIC FIX!
         name: req.senderId?.name || "Unknown",
         age: req.senderId?.age || 0,
         avatar: req.senderId?.avatar || "",

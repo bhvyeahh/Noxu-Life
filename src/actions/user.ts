@@ -75,3 +75,40 @@ export async function updateUserProfileAction(data: {
     return { success: false, error: "Failed to update profile." };
   }
 }
+
+// Add this to the bottom of src/actions/user.ts
+// At the bottom of src/actions/user.ts
+export async function getPublicUserProfileAction(targetUserId: string) {
+  try {
+    await connectToDatabase();
+    
+    // Validate we actually received a string
+    if (!targetUserId) return { success: false, error: "No ID provided to server" };
+
+    const targetUser = await User.findById(targetUserId).lean() as any;
+    
+    if (!targetUser) return { success: false, error: "User not found in DB" };
+
+    // Return the fresh data
+    return {
+      success: true,
+      profile: {
+        id: targetUser._id.toString(),
+        name: targetUser.name,
+        age: targetUser.age || 0,
+        avatar: targetUser.avatar,
+        bio: targetUser.bio || "",
+        vibeTags: targetUser.vibeTags || [],
+        hostedCount: targetUser.hostedCount || 0,
+        attendedCount: targetUser.attendedCount || 0,
+        // This is what you were looking for! 8.2 will show up now.
+        credibilityScore: targetUser.credibilityScore || 0, 
+        isStatsVisible: targetUser.isStatsVisible !== false,
+        badges: targetUser.badges || { trustworthy: 0, entertainer: 0, punctual: 0 }
+      }
+    };
+  } catch (error: any) {
+    console.error("Error fetching public profile:", error);
+    return { success: false, error: error.message };
+  }
+}
