@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import React, { useState, useEffect, useRef } from "react";
 import PusherClient from "pusher-js";
 import { Timer, AlertTriangle, Send, ChevronLeft, Check, MessageCircle, Ban, Navigation, Loader2, Inbox, Sparkles } from "lucide-react";
@@ -30,8 +31,31 @@ export function InboxView({
   const [liveMessages, setLiveMessages] = useState<any[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  
+
+
   // NEW: Live Timer Engine
   const [now, setNow] = useState(Date.now());
+
+  const router = useRouter();
+
+  // ALGORITHM: Trigger review exactly 6 hours after eventTime
+  // Since expiresAt = eventTime + 24h, we trigger at expiresAt - 18h
+  const showReviewBanner = (() => {
+    if (!activeChat?.expiresIn || activeChat.expiresIn === "Active Now" || activeChat.expiresIn === "Hold") return false;
+    const expiresAtTime = new Date(activeChat.expiresIn).getTime();
+    if (isNaN(expiresAtTime)) return false;
+    
+    const triggerTime = expiresAtTime - (18 * 60 * 60 * 1000);
+    // return now >= triggerTime;
+    return true; // FOR TESTING PURPOSES - ALWAYS SHOW THE BANNER
+  })();
+
+  useEffect(() => {
+    // Tick every second to update the real-time countdowns
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     // Tick every second to update the real-time countdowns
@@ -279,6 +303,26 @@ export function InboxView({
               </div>
             </div>
           </header>
+
+          {/* THE PREMIUM REVIEW BANNER (Appears 6 hours post-event) */}
+          {showReviewBanner && (
+            <div className="w-full bg-gradient-to-r from-[#CF5C36]/20 via-[#CF5C36]/5 to-transparent border-b border-[#CF5C36]/20 p-3 flex items-center justify-between px-4 z-10 backdrop-blur-md animate-in slide-in-from-top-2 duration-500">
+              <div className="flex items-center gap-2.5">
+                <div className="relative flex items-center justify-center">
+                  <div className="absolute w-6 h-6 bg-[#CF5C36] rounded-full blur-md opacity-40 animate-pulse" />
+                  <Sparkles className="relative w-4 h-4 text-[#CF5C36]" />
+                </div>
+                <span className="text-xs font-medium text-white/90 tracking-wide">The event has ended. Rate the vibe.</span>
+              </div>
+              <button
+                onClick={() => router.push(`/review/${activeChat.id}`)}
+                className="px-5 py-2 bg-[#CF5C36] hover:bg-[#b04a29] text-white text-[11px] font-bold uppercase tracking-wider rounded-full shadow-[0_0_15px_rgba(207,92,54,0.3)] transition-all active:scale-95"
+              >
+                Rate Vibe
+              </button>
+            </div>
+          )}
+
 
           <div className="sm:hidden flex items-center justify-center gap-1.5 py-1.5 bg-[#CF5C36]/10 border-b border-[#CF5C36]/20 text-[#CF5C36] text-[10px] font-mono font-bold tracking-widest uppercase">
             <Timer className="w-3.5 h-3.5" /> Self-destructs in {formatTimeLeft(activeChat?.expiresIn)}
