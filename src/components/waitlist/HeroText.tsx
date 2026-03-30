@@ -29,12 +29,12 @@ export function HeroText() {
       <div className="inline-flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-6 px-6 py-3.5 mb-10 rounded-2xl sm:rounded-full bg-[#CF5C36]/10 border border-[#CF5C36]/30 backdrop-blur-md shadow-[0_0_25px_rgba(207,92,54,0.15)]">
         <div className="flex items-center gap-2.5 text-white text-sm font-semibold tracking-wide">
           <Calendar className="w-4 h-4 text-[#CF5C36]" />
-          Launching March 31st
+          Launching April 21st
         </div>
         <div className="hidden sm:block w-1.5 h-1.5 rounded-full bg-[#CF5C36]/40"></div>
         <div className="flex items-center gap-2.5 text-white text-sm font-semibold tracking-wide">
           <MapPin className="w-4 h-4 text-[#CF5C36]" />
-          Only in: Chandigarh & Mohali
+          in your city
         </div>
       </div>
     </>
