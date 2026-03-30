@@ -31,11 +31,8 @@ export function HeroText() {
           <Calendar className="w-4 h-4 text-[#CF5C36]" />
           Launching April 21st
         </div>
-        <div className="hidden sm:block w-1.5 h-1.5 rounded-full bg-[#CF5C36]/40"></div>
-        <div className="flex items-center gap-2.5 text-white text-sm font-semibold tracking-wide">
-          <MapPin className="w-4 h-4 text-[#CF5C36]" />
-          in your city
-        </div>
+        {/* <div className="hidden sm:block w-1.5 h-1.5 rounded-full bg-[#CF5C36]/40"></div> */}
+
       </div>
     </>
   );
